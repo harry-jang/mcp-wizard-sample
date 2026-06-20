@@ -3,3 +3,5 @@ dist/
 
 # npm pack 산출물
 *.tgz
+
+.claude/settings.local.json
