@@ -1,5 +1,6 @@
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { execSync } from "node:child_process";
 import {
   intro,
   outro,
@@ -19,8 +20,11 @@ import { GoogleDriveConnector } from "../providers/googledrive.js";
 import type { Connector, ProviderId } from "../providers/types.js";
 import { getRefreshTokenViaLoopback } from "./google-oauth.js";
 
-/** 배포된 npm 패키지 이름. 등록 명령/`.mcp.json`에서 사용한다. */
+/** Claude Code에 등록되는 MCP 서버 이름. */
 const PKG = "wizard-connector";
+
+/** npx가 받아 실행할 설치 대상. git 소스에서 직접 설치(레지스트리 미게시). */
+const INSTALL_SPEC = "github:harry-jang/mcp-wizard-sample";
 
 /** clack 프롬프트 취소(Ctrl+C) 처리. */
 function check<T>(value: T | symbol): T {
@@ -69,27 +73,39 @@ export async function runWizard(): Promise<void> {
   const savedPath = writeConfig(resolved.config);
   log.success(`인증정보를 ${savedPath} 에 저장했습니다.`);
 
-  // 5) Claude Code 등록
-  const userCmd = `claude mcp add -s user ${PKG} -- npx -y ${PKG}`;
+  // 5) Claude Code 등록 — 스코프 선택
+  const userCmd = `claude mcp add -s user ${PKG} -- npx -y ${INSTALL_SPEC}`;
 
-  const registerHere = check(
-    await confirm({
-      message: `현재 폴더(${process.cwd()})에 .mcp.json으로 등록할까요?`,
-      initialValue: false,
+  const scope = check(
+    await select({
+      message: "Claude Code에 어떻게 등록할까요?",
+      options: [
+        { value: "user", label: "전역 (user 스코프)", hint: "모든 프로젝트에서 사용" },
+        { value: "project", label: "이 프로젝트 (.mcp.json)", hint: `${process.cwd()} — git으로 팀 공유` },
+        { value: "skip", label: "지금 등록 안 함", hint: "나중에 수동으로" },
+      ],
+      initialValue: "user" as "user" | "project" | "skip",
     }),
-  );
-  if (registerHere) {
+  ) as "user" | "project" | "skip";
+
+  if (scope === "project") {
     const mcpPath = writeProjectMcpJson();
-    log.success(`이 프로젝트에 등록했습니다: ${mcpPath}`);
+    log.success(`이 프로젝트(project 스코프)에 등록했습니다: ${mcpPath}`);
+  } else if (scope === "user") {
+    try {
+      execSync(userCmd, { stdio: "ignore" });
+      log.success(`전역(user 스코프)으로 등록했습니다: ${PKG}`);
+    } catch {
+      log.warn("자동 등록에 실패했습니다(claude CLI를 찾지 못함). 아래 명령을 직접 실행하세요:");
+      log.message(`  ${userCmd}`);
+    }
   }
 
   note(
     [
-      "전역(user 스코프)으로 등록하려면 아래 명령을 실행하세요:",
-      `  ${userCmd}`,
-      "",
-      "이미 npm에 게시했다면 npx가 패키지를 받아 실행합니다.",
-      "게시 전 로컬 테스트는 `npm link` 후 위 명령을 사용하세요.",
+      scope === "skip"
+        ? `나중에 전역(user 스코프)으로 등록하려면:\n  ${userCmd}`
+        : "`claude mcp list` 또는 `/mcp`로 등록을 확인하세요.",
       "",
       "비밀값은 설정 파일에만 있고 서버가 시작 시 직접 읽으므로, 명령/JSON에는 토큰이 없습니다.",
     ].join("\n"),
@@ -183,7 +199,7 @@ function writeProjectMcpJson(): string {
   }
   config.mcpServers = {
     ...(config.mcpServers ?? {}),
-    [PKG]: { command: "npx", args: ["-y", PKG] },
+    [PKG]: { command: "npx", args: ["-y", INSTALL_SPEC] },
   };
   writeFileSync(mcpPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   return mcpPath;
