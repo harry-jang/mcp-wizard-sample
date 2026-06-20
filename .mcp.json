@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "wizard-connector": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "github:harry-jang/mcp-wizard-sample"
+      ]
+    }
+  }
+}
