@@ -5,3 +5,6 @@ dist/
 *.tgz
 
 .claude/settings.local.json
+
+# 로컬 개발/테스트용 MCP 설정 (소비자가 직접 추가)
+.mcp.json
